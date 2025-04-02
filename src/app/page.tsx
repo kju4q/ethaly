@@ -2,17 +2,13 @@
 
 import { useState, useEffect } from "react";
 import { Session, SessionCategory } from "@/types/session";
-import {
-  getSessions,
-  saveSessions,
-  getBookmarkedSessionIds,
-} from "@/utils/storage";
 import SessionCard from "@/components/SessionCard";
 import NowHappeningBanner from "@/components/NowHappeningBanner";
 import AddSessionModal from "@/components/AddSessionModal";
 import Toast from "@/components/Toast";
 import { PlusIcon, HeartIcon } from "@heroicons/react/24/outline";
 import { format, addHours } from "date-fns";
+// import { supabase, Event } from "@/lib/supabase";
 
 interface ToastState {
   show: boolean;
@@ -45,17 +41,43 @@ export default function Home() {
     SessionCategory[]
   >([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [toast, setToast] = useState<ToastState>({
     show: false,
     message: "",
     isBookmarked: false,
   });
 
+  // Update date every day at midnight
   useEffect(() => {
-    const loadedSessions = getSessions();
-    const bookmarkedIds = getBookmarkedSessionIds();
+    const updateDate = () => {
+      const now = new Date();
+      const tomorrow = new Date(now);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(0, 0, 0, 0);
+
+      const timeUntilMidnight = tomorrow.getTime() - now.getTime();
+
+      setCurrentDate(now);
+
+      const timeoutId = setTimeout(() => {
+        updateDate();
+      }, timeUntilMidnight);
+
+      return () => clearTimeout(timeoutId);
+    };
+
+    updateDate();
+  }, []);
+
+  // Load sessions from localStorage
+  useEffect(() => {
+    const loadedSessions = JSON.parse(localStorage.getItem("sessions") || "[]");
+    const bookmarkedIds = JSON.parse(
+      localStorage.getItem("bookmarkedEvents") || "[]"
+    );
     setSessions(
-      loadedSessions.map((session) => ({
+      loadedSessions.map((session: Session) => ({
         ...session,
         isBookmarked: bookmarkedIds.includes(session.id),
       }))
@@ -70,7 +92,8 @@ export default function Home() {
     };
     const updatedSessions = [...sessions, session];
     setSessions(updatedSessions);
-    saveSessions(updatedSessions);
+    localStorage.setItem("sessions", JSON.stringify(updatedSessions));
+    setIsModalOpen(false);
   };
 
   const handleBookmarkToggle = (sessionId: string) => {
@@ -85,6 +108,23 @@ export default function Home() {
               : "Session removed from bookmarks",
             isBookmarked: newIsBookmarked,
           });
+
+          // Update localStorage
+          const bookmarkedIds = JSON.parse(
+            localStorage.getItem("bookmarkedEvents") || "[]"
+          );
+          if (newIsBookmarked) {
+            localStorage.setItem(
+              "bookmarkedEvents",
+              JSON.stringify([...bookmarkedIds, sessionId])
+            );
+          } else {
+            localStorage.setItem(
+              "bookmarkedEvents",
+              JSON.stringify(bookmarkedIds.filter((id) => id !== sessionId))
+            );
+          }
+
           return { ...session, isBookmarked: newIsBookmarked };
         }
         return session;
@@ -95,9 +135,7 @@ export default function Home() {
   const currentSessions = sessions.filter((session) => {
     const now = new Date();
     const startTime = new Date(session.startTime);
-    const [hours, minutes] = session.endTime.split(":").map(Number);
-    const endTime = new Date(startTime);
-    endTime.setHours(hours, minutes, 0, 0);
+    const endTime = new Date(session.endTime);
 
     return now >= startTime && now <= endTime;
   });
@@ -162,7 +200,7 @@ export default function Home() {
           </div>
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm">
-              🗓️ {format(new Date(), "EEEE, MMMM d")}
+              🗓️ {format(currentDate, "EEEE, MMMM d")}
             </span>
           </div>
         </div>
